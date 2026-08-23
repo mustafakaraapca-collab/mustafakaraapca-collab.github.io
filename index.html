@@ -168,6 +168,7 @@
           <div><label>TOST</label><input id="tost" inputmode="numeric" placeholder="15.750"></div>
           <div><label>KART</label><input id="kart" inputmode="numeric" placeholder="2.700"></div>
           <div><label>GİDER</label><input id="gider" inputmode="numeric" placeholder="0"></div>
+          <div><label>GİDER KATEGORİSİ</label><select id="giderCategory"><option value="">Kategori seç</option><option value="Ürün Alımı">Ürün Alımı</option><option value="Maaş">Maaş</option><option value="Elektrik">Elektrik</option><option value="Kira">Kira</option><option value="Diğer">Diğer</option></select></div>
         </div>
         <div class="preview">
           <div class="box"><small>HESAPLANAN CİRO</small><strong id="previewCiro">₺0</strong></div>
@@ -200,7 +201,7 @@
         </div>
         <div class="tablewrap">
           <table>
-            <thead><tr><th>TARİH</th><th>KANTİN</th><th>TOST</th><th>KART</th><th>CİRO</th><th>GİDER</th><th>KALAN</th><th>İŞLEM</th></tr></thead>
+            <thead><tr><th>TARİH</th><th>KANTİN</th><th>TOST</th><th>KART</th><th>CİRO</th><th>GİDER</th><th>KATEGORİ</th><th>KALAN</th><th>İŞLEM</th></tr></thead>
             <tbody id="tbody"></tbody>
           </table>
           <div class="empty" id="empty">Henüz kayıt yok.</div>
@@ -230,6 +231,9 @@
 
       <div class="section-title"><h2>Haftalık Özet</h2><span>Seçilen ay</span></div>
       <div class="card"><div class="summary-table" id="weeklySummary"></div></div>
+
+      <div class="section-title"><h2>Gider Kategorileri</h2><span>Seçilen ay</span></div>
+      <div class="card"><div class="summary-table" id="expenseCategorySummary"></div></div>
     </section>
 
     <section class="page" id="settingsPage">
@@ -276,7 +280,9 @@
 
 <script>
 const K="ciro_pro_rows_v2", PK="ciro_pro_pin_v1", TK="ciro_pro_theme";
-let rows=JSON.parse(localStorage.getItem(K)||"[]"), editId=null, pinMode="login";
+const EXPENSE_CATEGORIES=["Ürün Alımı","Maaş","Elektrik","Kira","Diğer"];
+function normalizeRow(r){const gider=Number(r?.gider||0);return {...r,giderCategory:r?.giderCategory||(gider>0?"Diğer":"")};}
+let rows=JSON.parse(localStorage.getItem(K)||"[]").map(normalizeRow), editId=null, pinMode="login";
 
 const $=id=>document.getElementById(id);
 const fmt=n=>"₺"+Math.round(n||0).toLocaleString("tr-TR");
@@ -339,13 +345,13 @@ function renderDashboard(){
 }
 function renderTable(){
   const list=calc(), q=$("search").value.trim().toLowerCase(), mf=$("monthFilter").value;
-  const filtered=list.filter(r=>(!mf||monthKey(r.date)===mf)&&(!q||trDate(r.date).includes(q)||r.date.includes(q)));
+  const filtered=list.filter(r=>(!mf||monthKey(r.date)===mf)&&(!q||trDate(r.date).includes(q)||r.date.includes(q)||(r.giderCategory||"").toLowerCase().includes(q)));
   const tb=$("tbody");tb.innerHTML="";let lastW="";
   filtered.forEach(r=>{
     const wk=`${r.date.slice(0,4)}-${weekNo(r.date)}`;
-    if(wk!==lastW){const x=document.createElement("tr");x.className="weekrow";x.innerHTML=`<td colspan="8">${r.date.slice(0,4)} · ${weekNo(r.date)}. hafta</td>`;tb.appendChild(x);lastW=wk}
+    if(wk!==lastW){const x=document.createElement("tr");x.className="weekrow";x.innerHTML=`<td colspan="9">${r.date.slice(0,4)} · ${weekNo(r.date)}. hafta</td>`;tb.appendChild(x);lastW=wk}
     const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${trDate(r.date)}</td><td>${plain(r.kantin)}</td><td>${plain(r.tost)}</td><td>${plain(r.kart)}</td><td class="ciro">${plain(r.ciro)}</td><td>${plain(r.gider)}</td><td class="kalan ${r.balance<0?"negative":""}">${plain(r.balance)}</td><td><div class="rowactions"><button class="secondary" onclick="editRow('${r.id}')">Düzenle</button><button class="danger" onclick="deleteRow('${r.id}')">Sil</button></div></td>`;
+    tr.innerHTML=`<td>${trDate(r.date)}</td><td>${plain(r.kantin)}</td><td>${plain(r.tost)}</td><td>${plain(r.kart)}</td><td class="ciro">${plain(r.ciro)}</td><td>${plain(r.gider)}</td><td>${r.giderCategory||"-"}</td><td class="kalan ${r.balance<0?"negative":""}">${plain(r.balance)}</td><td><div class="rowactions"><button class="secondary" onclick="editRow('${r.id}')">Düzenle</button><button class="danger" onclick="deleteRow('${r.id}')">Sil</button></div></td>`;
     tb.appendChild(tr);
   });
   $("empty").style.display=filtered.length?"none":"block";
@@ -357,24 +363,26 @@ function updatePreview(){
 }
 function clearForm(){
   editId=null;$("formTitle").textContent="Yeni Gün Ekle";$("saveBtn").textContent="Kaydet";$("date").value=today();
-  ["kantin","tost","kart","gider"].forEach(id=>$(id).value="");updatePreview();
+  ["kantin","tost","kart","gider"].forEach(id=>$(id).value="");$("giderCategory").value="";updatePreview();
 }
 function addOrUpdate(){
   const d=$("date").value;if(!d)return alert("Tarih seçmelisin.");
-  const data={date:d,kantin:parseMoney($("kantin").value),tost:parseMoney($("tost").value),kart:parseMoney($("kart").value),gider:parseMoney($("gider").value)};
+  const gider=parseMoney($("gider").value);
+  const giderCategory=gider>0?($("giderCategory").value||"Diğer"):"";
+  const data={date:d,kantin:parseMoney($("kantin").value),tost:parseMoney($("tost").value),kart:parseMoney($("kart").value),gider,giderCategory};
   if(editId){const i=rows.findIndex(r=>r.id===editId);if(i>=0)rows[i]={...rows[i],...data}}
   else rows.push({id:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)),createdAt:Date.now(),...data});
   save();renderMonthOptions();renderAll();clearForm();toast(editId?"Güncellendi":"Kaydedildi");switchPage("dashboardPage");
 }
 window.editRow=id=>{
   const r=rows.find(x=>x.id===id);if(!r)return;editId=id;$("formTitle").textContent="Kaydı Düzenle";$("saveBtn").textContent="Güncelle";$("date").value=r.date;
-  $("kantin").value=plain(r.kantin);$("tost").value=plain(r.tost);$("kart").value=plain(r.kart);$("gider").value=plain(r.gider);updatePreview();switchPage("entryPage")
+  $("kantin").value=plain(r.kantin);$("tost").value=plain(r.tost);$("kart").value=plain(r.kart);$("gider").value=plain(r.gider);$("giderCategory").value=r.giderCategory||"";updatePreview();switchPage("entryPage")
 }
 window.deleteRow=id=>{if(confirm("Bu kayıt silinsin mi?")){rows=rows.filter(r=>r.id!==id);save();renderMonthOptions();renderAll();toast("Kayıt silindi")}}
 function closeBalance(){
   const d=$("date").value||today(), c=parseMoney($("kantin").value)+parseMoney($("tost").value)+parseMoney($("kart").value);
   const prior=calc(sorted().filter(r=>r.id!==editId&&r.date<=d)); const b=prior.length?prior[prior.length-1].balance:0;
-  $("gider").value=plain(Math.max(0,b+c));updatePreview();
+  $("gider").value=plain(Math.max(0,b+c));if(!$("giderCategory").value)$("giderCategory").value="Diğer";updatePreview();
 }
 function download(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function csv(){
@@ -420,7 +428,10 @@ function renderReports(){
   drawBars($("monthChart"),labs.length?labs:["—"],vals.length?vals:[0]);
   drawDonut($("mixChart"),[list.reduce((s,r)=>s+r.kantin,0),list.reduce((s,r)=>s+r.tost,0),list.reduce((s,r)=>s+r.kart,0)],["Kantin","Tost","Kart"]);
   const weeks={};list.forEach(r=>{const k=`${weekNo(r.date)}. hafta`;weeks[k]??={ciro:0,gider:0,kantin:0,tost:0,kart:0};weeks[k].ciro+=r.ciro;weeks[k].gider+=r.gider;weeks[k].kantin+=r.kantin;weeks[k].tost+=r.tost;weeks[k].kart+=r.kart});
-  $("weeklySummary").innerHTML=Object.keys(weeks).length?Object.entries(weeks).map(([k,v])=>`<div class="summary-row"><b>${k}</b><span>Ciro<br><b>${plain(v.ciro)}</b></span><span>Gider<br><b>${plain(v.gider)}</b></span><span>Kantin<br><b>${plain(v.kantin)}</b></span><span>Net<br><b>${plain(v.ciro-v.gider)}</b></span></div>`).join(""):'<div class="empty">Bu ayda kayıt yok.</div>'
+  $("weeklySummary").innerHTML=Object.keys(weeks).length?Object.entries(weeks).map(([k,v])=>`<div class="summary-row"><b>${k}</b><span>Ciro<br><b>${plain(v.ciro)}</b></span><span>Gider<br><b>${plain(v.gider)}</b></span><span>Kantin<br><b>${plain(v.kantin)}</b></span><span>Net<br><b>${plain(v.ciro-v.gider)}</b></span></div>`).join(""):'<div class="empty">Bu ayda kayıt yok.</div>';
+  const byCategory={}; list.forEach(r=>{if(r.gider>0){const k=r.giderCategory||"Diğer";byCategory[k]=(byCategory[k]||0)+r.gider}});
+  const ordered=EXPENSE_CATEGORIES.map(k=>[k,byCategory[k]||0]).filter(([,v])=>v>0);
+  $("expenseCategorySummary").innerHTML=ordered.length?ordered.map(([k,v])=>`<div class="summary-row"><b>${k}</b><span>Toplam Gider<br><b>${plain(v)}</b></span><span>Pay<br><b>%${g?Math.round((v/g)*100):0}</b></span><span>Durum<br><b>${v>0?"Aktif":"-"}</b></span><span>—<br><b></b></span></div>`).join(""):'<div class="empty">Bu ay için kategorili gider kaydı yok.</div>';
 }
 function renderAll(){renderDashboard();renderTable();if($("reportsPage").classList.contains("active"))renderReports()}
 
