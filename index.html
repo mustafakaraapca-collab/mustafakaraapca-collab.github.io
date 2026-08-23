@@ -42,14 +42,25 @@
     .section-title{display:flex;justify-content:space-between;align-items:center;margin:16px 2px 9px}
     .section-title h2{font-size:15px;margin:0}
     .section-title span{color:var(--muted);font-size:11px}
-    .formgrid{display:grid;grid-template-columns:1.2fr repeat(4,1fr);gap:10px}
+    .formgrid{display:grid;grid-template-columns:1.2fr repeat(3,1fr);gap:10px}
     label{font-size:10px;font-weight:800;color:var(--muted);display:block;margin:0 0 5px 2px}
     input,select{width:100%;height:46px;border:1px solid var(--line);border-radius:13px;background:var(--card);color:var(--text);padding:0 12px;outline:none}
     input:focus,select:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(16,185,129,.12)}
-    .preview{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .preview{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
     .preview .box{padding:12px;border:1px dashed var(--line);border-radius:14px;background:var(--soft)}
     .preview small{display:block;color:var(--muted);font-size:10px;font-weight:800;margin-bottom:6px}
     .preview strong{font-size:19px}
+    .expense-section{grid-column:1/-1;margin-top:2px;padding:12px;background:var(--soft);border:1px solid var(--line);border-radius:15px}
+    .expense-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:9px}
+    .expense-head strong{font-size:12px}
+    .expense-head span{font-size:10px;color:var(--muted)}
+    .expense-list{display:grid;gap:8px}
+    .expense-row{display:grid;grid-template-columns:1.15fr 1fr auto;gap:8px;align-items:end}
+    .expense-row select,.expense-row input{height:42px}
+    .remove-expense{width:42px;height:42px;padding:0;border-radius:11px;background:#fee2e2;color:#b91c1c;font-size:19px}
+    .add-expense{height:36px;padding:0 11px;font-size:11px}
+    .expense-chips{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;max-width:260px;margin-left:auto}
+    .expense-chip{background:var(--soft);border:1px solid var(--line);border-radius:999px;padding:3px 7px;font-size:9px;color:var(--muted)}
     .actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
     button{height:42px;border:0;border-radius:12px;padding:0 14px;font-weight:800;cursor:pointer}
     .primary{background:var(--green);color:#fff}
@@ -112,6 +123,9 @@
     }
     @media(max-width:520px){
       .app{padding-left:10px;padding-right:10px}
+      .preview{grid-template-columns:1fr 1fr}
+      .preview .expense-total-box{grid-column:1/-1}
+      .expense-row{grid-template-columns:1fr 1fr auto}
       .stat .value{font-size:20px}
       .actions button{flex:1}
       .toolbar .group{width:100%}
@@ -167,11 +181,18 @@
           <div><label>KANTİN</label><input id="kantin" inputmode="numeric" placeholder="24.335"></div>
           <div><label>TOST</label><input id="tost" inputmode="numeric" placeholder="15.750"></div>
           <div><label>KART</label><input id="kart" inputmode="numeric" placeholder="2.700"></div>
-          <div><label>GİDER</label><input id="gider" inputmode="numeric" placeholder="0"></div>
-          <div><label>GİDER KATEGORİSİ</label><select id="giderCategory"><option value="">Kategori seç</option><option value="Ürün Alımı">Ürün Alımı</option><option value="Maaş">Maaş</option><option value="Elektrik">Elektrik</option><option value="Kira">Kira</option><option value="Diğer">Diğer</option></select></div>
+
+          <div class="expense-section">
+            <div class="expense-head">
+              <div><strong>GİDERLER</strong><br><span>Aynı güne istediğin kadar gider ekleyebilirsin.</span></div>
+              <button class="secondary add-expense" id="addExpenseBtn" type="button">+ Gider Ekle</button>
+            </div>
+            <div class="expense-list" id="expenseRows"></div>
+          </div>
         </div>
         <div class="preview">
           <div class="box"><small>HESAPLANAN CİRO</small><strong id="previewCiro">₺0</strong></div>
+          <div class="box expense-total-box"><small>TOPLAM GİDER</small><strong id="previewExpense">₺0</strong></div>
           <div class="box"><small>KAYIT SONRASI KALAN</small><strong id="previewBalance">₺0</strong></div>
         </div>
         <div class="actions">
@@ -182,7 +203,7 @@
       </div>
       <div class="card install-tip" style="margin-top:12px">
         <b>Hafta sonu kapanışını hızlandır</b>
-        <p>“Kalanı Gidere Yaz” butonu o güne kadar biriken bakiyeyi gider alanına yazar ve kayıt sonrası bakiyeyi sıfıra getirir.</p>
+        <p>“Kalanı Gidere Yaz” butonu mevcut giderlerin üzerine, bakiyeyi sıfırlayacak ek gideri yeni bir satır olarak ekler.</p>
       </div>
     </section>
 
@@ -281,7 +302,13 @@
 <script>
 const K="ciro_pro_rows_v2", PK="ciro_pro_pin_v1", TK="ciro_pro_theme";
 const EXPENSE_CATEGORIES=["Ürün Alımı","Maaş","Elektrik","Kira","Diğer"];
-function normalizeRow(r){const gider=Number(r?.gider||0);return {...r,giderCategory:r?.giderCategory||(gider>0?"Diğer":"")};}
+function normalizeRow(r){
+  const oldGider=Number(r?.gider||0);
+  let expenses=Array.isArray(r?.expenses)?r.expenses.map(e=>({category:e?.category||"Diğer",amount:Number(e?.amount||0)})).filter(e=>e.amount>0):[];
+  if(!expenses.length&&oldGider>0)expenses=[{category:r?.giderCategory||"Diğer",amount:oldGider}];
+  const gider=expenses.reduce((s,e)=>s+e.amount,0);
+  return {...r,expenses,gider,giderCategory:expenses.length===1?expenses[0].category:(expenses.length>1?"Çoklu":"")};
+}
 let rows=JSON.parse(localStorage.getItem(K)||"[]").map(normalizeRow), editId=null, pinMode="login";
 
 const $=id=>document.getElementById(id);
@@ -299,6 +326,37 @@ function parseMoney(v){
   else if(s.includes(".")){const a=s.split("."); if(a.slice(1).every(x=>x.length===3))s=a.join("")}
   const n=Number(s.replace(/[^\d.-]/g,"")); return Number.isFinite(n)?Math.round(n):0;
 }
+function expenseOptions(selected=""){
+  return '<option value="">Kategori seç</option>'+EXPENSE_CATEGORIES.map(c=>`<option value="${c}" ${c===selected?"selected":""}>${c}</option>`).join("");
+}
+function renderExpenseRows(items=[{category:"",amount:""}]){
+  const box=$("expenseRows");box.innerHTML="";
+  const list=items.length?items:[{category:"",amount:""}];
+  list.forEach(item=>{
+    const row=document.createElement("div");row.className="expense-row";
+    const amount=item.amount?plain(item.amount):"";
+    row.innerHTML=`<div><label>KATEGORİ</label><select class="expense-category">${expenseOptions(item.category||"")}</select></div><div><label>TUTAR</label><input class="expense-amount" inputmode="numeric" placeholder="0" value="${amount}"></div><button type="button" class="remove-expense" aria-label="Gideri sil">×</button>`;
+    row.querySelector(".expense-amount").addEventListener("input",updatePreview);
+    row.querySelector(".expense-category").addEventListener("change",updatePreview);
+    row.querySelector(".remove-expense").addEventListener("click",()=>{row.remove();if(!box.children.length)renderExpenseRows();updatePreview()});
+    box.appendChild(row);
+  });
+  updatePreview();
+}
+function addExpenseRow(item={category:"",amount:""}){
+  const current=getExpenseDrafts(true);current.push(item);renderExpenseRows(current);
+}
+function getExpenseDrafts(includeEmpty=false){
+  return [...document.querySelectorAll("#expenseRows .expense-row")].map(row=>({category:row.querySelector(".expense-category").value||"",amount:parseMoney(row.querySelector(".expense-amount").value)})).filter(e=>includeEmpty||e.amount>0);
+}
+function getExpenseTotal(){return getExpenseDrafts().reduce((s,e)=>s+e.amount,0)}
+function expenseSummary(r){
+  const items=(r.expenses||[]).filter(e=>e.amount>0);
+  if(!items.length)return "-";
+  return `<div class="expense-chips">${items.map(e=>`<span class="expense-chip">${e.category} ${plain(e.amount)}</span>`).join("")}</div>`;
+}
+function expenseSearchText(r){return (r.expenses||[]).map(e=>e.category).join(" ").toLowerCase()}
+
 function weekNo(s){const d=new Date(s+"T12:00:00");d.setHours(0,0,0,0);d.setDate(d.getDate()+3-((d.getDay()+6)%7));const w1=new Date(d.getFullYear(),0,4);return 1+Math.round(((d-w1)/86400000-3+((w1.getDay()+6)%7))/7)}
 function sorted(){return [...rows].sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt-b.createdAt)}
 function calc(list=sorted()){let bal=0;return list.map(r=>{const ciro=r.kantin+r.tost+r.kart;bal+=ciro-r.gider;return{...r,ciro,balance:bal}})}
@@ -345,54 +403,58 @@ function renderDashboard(){
 }
 function renderTable(){
   const list=calc(), q=$("search").value.trim().toLowerCase(), mf=$("monthFilter").value;
-  const filtered=list.filter(r=>(!mf||monthKey(r.date)===mf)&&(!q||trDate(r.date).includes(q)||r.date.includes(q)||(r.giderCategory||"").toLowerCase().includes(q)));
+  const filtered=list.filter(r=>(!mf||monthKey(r.date)===mf)&&(!q||trDate(r.date).includes(q)||r.date.includes(q)||expenseSearchText(r).includes(q)));
   const tb=$("tbody");tb.innerHTML="";let lastW="";
   filtered.forEach(r=>{
     const wk=`${r.date.slice(0,4)}-${weekNo(r.date)}`;
     if(wk!==lastW){const x=document.createElement("tr");x.className="weekrow";x.innerHTML=`<td colspan="9">${r.date.slice(0,4)} · ${weekNo(r.date)}. hafta</td>`;tb.appendChild(x);lastW=wk}
     const tr=document.createElement("tr");
-    tr.innerHTML=`<td>${trDate(r.date)}</td><td>${plain(r.kantin)}</td><td>${plain(r.tost)}</td><td>${plain(r.kart)}</td><td class="ciro">${plain(r.ciro)}</td><td>${plain(r.gider)}</td><td>${r.giderCategory||"-"}</td><td class="kalan ${r.balance<0?"negative":""}">${plain(r.balance)}</td><td><div class="rowactions"><button class="secondary" onclick="editRow('${r.id}')">Düzenle</button><button class="danger" onclick="deleteRow('${r.id}')">Sil</button></div></td>`;
+    tr.innerHTML=`<td>${trDate(r.date)}</td><td>${plain(r.kantin)}</td><td>${plain(r.tost)}</td><td>${plain(r.kart)}</td><td class="ciro">${plain(r.ciro)}</td><td>${plain(r.gider)}</td><td>${expenseSummary(r)}</td><td class="kalan ${r.balance<0?"negative":""}">${plain(r.balance)}</td><td><div class="rowactions"><button class="secondary" onclick="editRow('${r.id}')">Düzenle</button><button class="danger" onclick="deleteRow('${r.id}')">Sil</button></div></td>`;
     tb.appendChild(tr);
   });
   $("empty").style.display=filtered.length?"none":"block";
 }
 function updatePreview(){
-  const c=parseMoney($("kantin").value)+parseMoney($("tost").value)+parseMoney($("kart").value), g=parseMoney($("gider").value), d=$("date").value||today();
+  const c=parseMoney($("kantin").value)+parseMoney($("tost").value)+parseMoney($("kart").value), g=getExpenseTotal(), d=$("date").value||today();
   const prior=calc(sorted().filter(r=>r.id!==editId&&r.date<=d)); const b=prior.length?prior[prior.length-1].balance:0;
-  $("previewCiro").textContent=fmt(c); $("previewBalance").textContent=fmt(b+c-g); $("previewBalance").className=(b+c-g)<0?"negative":"";
+  $("previewCiro").textContent=fmt(c);$("previewExpense").textContent=fmt(g);$("previewBalance").textContent=fmt(b+c-g);$("previewBalance").className=(b+c-g)<0?"negative":"";
 }
 function clearForm(){
   editId=null;$("formTitle").textContent="Yeni Gün Ekle";$("saveBtn").textContent="Kaydet";$("date").value=today();
-  ["kantin","tost","kart","gider"].forEach(id=>$(id).value="");$("giderCategory").value="";updatePreview();
+  ["kantin","tost","kart"].forEach(id=>$(id).value="");renderExpenseRows();updatePreview();
 }
 function addOrUpdate(){
   const d=$("date").value;if(!d)return alert("Tarih seçmelisin.");
-  const gider=parseMoney($("gider").value);
-  const giderCategory=gider>0?($("giderCategory").value||"Diğer"):"";
-  const data={date:d,kantin:parseMoney($("kantin").value),tost:parseMoney($("tost").value),kart:parseMoney($("kart").value),gider,giderCategory};
+  const expenses=getExpenseDrafts().map(e=>({category:e.category||"Diğer",amount:e.amount}));
+  const gider=expenses.reduce((s,e)=>s+e.amount,0);
+  const data={date:d,kantin:parseMoney($("kantin").value),tost:parseMoney($("tost").value),kart:parseMoney($("kart").value),expenses,gider,giderCategory:expenses.length===1?expenses[0].category:(expenses.length>1?"Çoklu":"")};
+  const wasEditing=!!editId;
   if(editId){const i=rows.findIndex(r=>r.id===editId);if(i>=0)rows[i]={...rows[i],...data}}
   else rows.push({id:(crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+Math.random().toString(36).slice(2)),createdAt:Date.now(),...data});
-  save();renderMonthOptions();renderAll();clearForm();toast(editId?"Güncellendi":"Kaydedildi");switchPage("dashboardPage");
+  save();renderMonthOptions();renderAll();clearForm();toast(wasEditing?"Güncellendi":"Kaydedildi");switchPage("dashboardPage");
 }
 window.editRow=id=>{
-  const r=rows.find(x=>x.id===id);if(!r)return;editId=id;$("formTitle").textContent="Kaydı Düzenle";$("saveBtn").textContent="Güncelle";$("date").value=r.date;
-  $("kantin").value=plain(r.kantin);$("tost").value=plain(r.tost);$("kart").value=plain(r.kart);$("gider").value=plain(r.gider);$("giderCategory").value=r.giderCategory||"";updatePreview();switchPage("entryPage")
+  const r=normalizeRow(rows.find(x=>x.id===id));if(!r)return;editId=id;$("formTitle").textContent="Kaydı Düzenle";$("saveBtn").textContent="Güncelle";$("date").value=r.date;
+  $("kantin").value=plain(r.kantin);$("tost").value=plain(r.tost);$("kart").value=plain(r.kart);renderExpenseRows(r.expenses||[]);updatePreview();switchPage("entryPage")
 }
 window.deleteRow=id=>{if(confirm("Bu kayıt silinsin mi?")){rows=rows.filter(r=>r.id!==id);save();renderMonthOptions();renderAll();toast("Kayıt silindi")}}
 function closeBalance(){
   const d=$("date").value||today(), c=parseMoney($("kantin").value)+parseMoney($("tost").value)+parseMoney($("kart").value);
   const prior=calc(sorted().filter(r=>r.id!==editId&&r.date<=d)); const b=prior.length?prior[prior.length-1].balance:0;
-  $("gider").value=plain(Math.max(0,b+c));if(!$("giderCategory").value)$("giderCategory").value="Diğer";updatePreview();
+  const current=getExpenseTotal(), extra=Math.max(0,b+c-current);
+  if(extra<=0){toast("Bakiye zaten sıfır veya altında");return}
+  addExpenseRow({category:"Diğer",amount:extra});toast("Kapanış gideri eklendi");
 }
+
 function download(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function csv(){
   const lines=[["TARİH","KANTİN","TOST","KART","CİRO","GİDER","KALAN"]];
   calc().forEach(r=>lines.push([trDate(r.date),r.kantin,r.tost,r.kart,r.ciro,r.gider,r.balance]));
   download(new Blob(["\uFEFF"+lines.map(a=>a.join(";")).join("\n")],{type:"text/csv;charset=utf-8"}),`ciro-${today()}.csv`)
 }
-function backup(){download(new Blob([JSON.stringify({version:2,exportedAt:new Date().toISOString(),rows},null,2)],{type:"application/json"}),`ciro-yedek-${today()}.json`)}
+function backup(){download(new Blob([JSON.stringify({version:3,exportedAt:new Date().toISOString(),rows},null,2)],{type:"application/json"}),`ciro-yedek-${today()}.json`)}
 function restore(file){
-  const fr=new FileReader();fr.onload=()=>{try{const d=JSON.parse(fr.result);if(!Array.isArray(d.rows))throw 0;if(confirm(`${d.rows.length} kayıt mevcut verilerin yerine yüklensin mi?`)){rows=d.rows;save();renderMonthOptions();renderAll();toast("Yedek yüklendi")}}catch(e){alert("Geçersiz yedek dosyası.")}};fr.readAsText(file)
+  const fr=new FileReader();fr.onload=()=>{try{const d=JSON.parse(fr.result);if(!Array.isArray(d.rows))throw 0;if(confirm(`${d.rows.length} kayıt mevcut verilerin yerine yüklensin mi?`)){rows=d.rows.map(normalizeRow);save();renderMonthOptions();renderAll();toast("Yedek yüklendi")}}catch(e){alert("Geçersiz yedek dosyası.")}};fr.readAsText(file)
 }
 
 function fitCanvas(c){
@@ -429,7 +491,7 @@ function renderReports(){
   drawDonut($("mixChart"),[list.reduce((s,r)=>s+r.kantin,0),list.reduce((s,r)=>s+r.tost,0),list.reduce((s,r)=>s+r.kart,0)],["Kantin","Tost","Kart"]);
   const weeks={};list.forEach(r=>{const k=`${weekNo(r.date)}. hafta`;weeks[k]??={ciro:0,gider:0,kantin:0,tost:0,kart:0};weeks[k].ciro+=r.ciro;weeks[k].gider+=r.gider;weeks[k].kantin+=r.kantin;weeks[k].tost+=r.tost;weeks[k].kart+=r.kart});
   $("weeklySummary").innerHTML=Object.keys(weeks).length?Object.entries(weeks).map(([k,v])=>`<div class="summary-row"><b>${k}</b><span>Ciro<br><b>${plain(v.ciro)}</b></span><span>Gider<br><b>${plain(v.gider)}</b></span><span>Kantin<br><b>${plain(v.kantin)}</b></span><span>Net<br><b>${plain(v.ciro-v.gider)}</b></span></div>`).join(""):'<div class="empty">Bu ayda kayıt yok.</div>';
-  const byCategory={}; list.forEach(r=>{if(r.gider>0){const k=r.giderCategory||"Diğer";byCategory[k]=(byCategory[k]||0)+r.gider}});
+  const byCategory={}; list.forEach(r=>(r.expenses||[]).forEach(e=>{if(e.amount>0){const k=e.category||"Diğer";byCategory[k]=(byCategory[k]||0)+e.amount}}));
   const ordered=EXPENSE_CATEGORIES.map(k=>[k,byCategory[k]||0]).filter(([,v])=>v>0);
   $("expenseCategorySummary").innerHTML=ordered.length?ordered.map(([k,v])=>`<div class="summary-row"><b>${k}</b><span>Toplam Gider<br><b>${plain(v)}</b></span><span>Pay<br><b>%${g?Math.round((v/g)*100):0}</b></span><span>Durum<br><b>${v>0?"Aktif":"-"}</b></span><span>—<br><b></b></span></div>`).join(""):'<div class="empty">Bu ay için kategorili gider kaydı yok.</div>';
 }
@@ -453,8 +515,8 @@ $("pinBtn").addEventListener("click",async()=>{
 $("pinInput").addEventListener("keydown",e=>{if(e.key==="Enter")$("pinBtn").click()});
 $("changePinBtn").addEventListener("click",()=>{pinMode="change";$("lockTitle").textContent="Yeni PIN";$("lockText").textContent="Yeni 4–6 haneli PIN kodunu gir.";$("pinBtn").textContent="Kaydet";$("pinHint").textContent="";$("lock").classList.add("show")});
 
-$("saveBtn").addEventListener("click",addOrUpdate);$("clearBtn").addEventListener("click",clearForm);$("closeBalanceBtn").addEventListener("click",closeBalance);
-["kantin","tost","kart","gider"].forEach(id=>$(id).addEventListener("input",updatePreview));$("date").addEventListener("change",updatePreview);
+$("saveBtn").addEventListener("click",addOrUpdate);$("clearBtn").addEventListener("click",clearForm);$("closeBalanceBtn").addEventListener("click",closeBalance);$("addExpenseBtn").addEventListener("click",()=>addExpenseRow());
+["kantin","tost","kart"].forEach(id=>$(id).addEventListener("input",updatePreview));$("date").addEventListener("change",updatePreview);
 $("search").addEventListener("input",renderTable);$("monthFilter").addEventListener("change",renderTable);$("reportMonth").addEventListener("change",renderReports);
 $("csvBtn").addEventListener("click",csv);$("backupBtn").addEventListener("click",backup);
 $("restoreBtn").addEventListener("click",()=>$("restoreFile").click());$("restoreFile").addEventListener("change",e=>{if(e.target.files[0])restore(e.target.files[0]);e.target.value=""});
@@ -462,7 +524,7 @@ $("wipeBtn").addEventListener("click",()=>{if(confirm("Tüm ciro kayıtları kal
 $("themeBtn").addEventListener("click",()=>{const dark=document.documentElement.dataset.theme==="dark";document.documentElement.dataset.theme=dark?"":"dark";localStorage.setItem(TK,dark?"light":"dark");setTimeout(renderAll,30)});
 
 if(localStorage.getItem(TK)==="dark")document.documentElement.dataset.theme="dark";
-$("date").value=today();renderMonthOptions();renderAll();updatePreview();initLock();
+$("date").value=today();renderExpenseRows();renderMonthOptions();renderAll();updatePreview();initLock();
 window.addEventListener("resize",()=>{renderDashboard();if($("reportsPage").classList.contains("active"))renderReports()});
 if("serviceWorker" in navigator && location.protocol.startsWith("http")) navigator.serviceWorker.register("./sw.js").catch(()=>{});
 </script>
