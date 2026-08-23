@@ -1,4 +1,4 @@
-const CACHE="ciro-pro-v4";
+const CACHE="ciro-pro-v5";
 const ASSETS=["./","./index.html","./manifest.json","./icon-192.png","./icon-512.png"];
 
 self.addEventListener("install",event=>{

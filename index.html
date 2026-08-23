@@ -85,6 +85,7 @@
     .charts{display:grid;grid-template-columns:1.2fr .8fr;gap:10px}
     .chartbox{min-height:280px}
     canvas{width:100%;height:230px;display:block}
+    #expenseChart{height:290px}
     .summary-table{display:grid;gap:8px}
     .summary-row{display:grid;grid-template-columns:1.2fr repeat(4,.8fr);gap:6px;align-items:center;padding:10px 11px;background:var(--soft);border:1px solid var(--line);border-radius:12px}
     .summary-row b{font-size:12px}
@@ -253,8 +254,11 @@
       <div class="section-title"><h2>Haftalık Özet</h2><span>Seçilen ay</span></div>
       <div class="card"><div class="summary-table" id="weeklySummary"></div></div>
 
-      <div class="section-title"><h2>Gider Kategorileri</h2><span>Seçilen ay</span></div>
-      <div class="card"><div class="summary-table" id="expenseCategorySummary"></div></div>
+      <div class="section-title"><h2>Gider Kategorileri</h2><span>Seçilen ay · dağılım ve toplam</span></div>
+      <div class="charts">
+        <div class="card chartbox"><canvas id="expenseChart" width="700" height="320"></canvas></div>
+        <div class="card"><div class="summary-table" id="expenseCategorySummary"></div></div>
+      </div>
     </section>
 
     <section class="page" id="settingsPage">
@@ -448,8 +452,8 @@ function closeBalance(){
 
 function download(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function csv(){
-  const lines=[["TARİH","KANTİN","TOST","KART","CİRO","GİDER","KALAN"]];
-  calc().forEach(r=>lines.push([trDate(r.date),r.kantin,r.tost,r.kart,r.ciro,r.gider,r.balance]));
+  const lines=[["TARİH","KANTİN","TOST","KART","CİRO","TOPLAM GİDER","GİDER DETAYI","KALAN"]];
+  calc().forEach(r=>{const detail=(r.expenses||[]).filter(e=>e.amount>0).map(e=>`${e.category}: ${e.amount}`).join(" | ");lines.push([trDate(r.date),r.kantin,r.tost,r.kart,r.ciro,r.gider,detail,r.balance])});
   download(new Blob(["\uFEFF"+lines.map(a=>a.join(";")).join("\n")],{type:"text/csv;charset=utf-8"}),`ciro-${today()}.csv`)
 }
 function backup(){download(new Blob([JSON.stringify({version:3,exportedAt:new Date().toISOString(),rows},null,2)],{type:"application/json"}),`ciro-yedek-${today()}.json`)}
@@ -458,8 +462,8 @@ function restore(file){
 }
 
 function fitCanvas(c){
-  const dpr=window.devicePixelRatio||1, rect=c.getBoundingClientRect();
-  c.width=Math.max(300,Math.round(rect.width*dpr));c.height=Math.round(230*dpr);const x=c.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);return{x,w:rect.width,h:230}
+  const dpr=window.devicePixelRatio||1, rect=c.getBoundingClientRect(), cssH=Math.max(180,Math.round(rect.height||230));
+  c.width=Math.max(300,Math.round(rect.width*dpr));c.height=Math.round(cssH*dpr);const x=c.getContext("2d");x.setTransform(dpr,0,0,dpr,0,0);return{x,w:rect.width,h:cssH}
 }
 function css(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()}
 function drawBars(c,labels,values){
@@ -477,6 +481,22 @@ function drawDonut(c,vals,labels){
   x.textAlign="left";x.font="11px -apple-system";
   labels.forEach((lab,i)=>{const y=181+i*16;x.fillStyle=colors[i];x.fillRect(18,y-8,8,8);x.fillStyle=css("--muted");x.fillText(`${lab}  ${fmt(vals[i])}`,32,y)})
 }
+function drawExpenseDonut(c,vals,labels){
+  const {x,w,h}=fitCanvas(c);x.clearRect(0,0,w,h);
+  const total=vals.reduce((a,b)=>a+b,0), colors=["#10b981","#38bdf8","#f59e0b","#8b5cf6","#ef4444"], cx=w/2, cy=88, r=Math.min(62,w*.20);
+  x.lineCap="butt";
+  if(total<=0){
+    x.beginPath();x.strokeStyle=css("--line");x.lineWidth=26;x.arc(cx,cy,r,0,Math.PI*2);x.stroke();
+    x.fillStyle=css("--text");x.textAlign="center";x.font="800 17px -apple-system";x.fillText("₺0",cx,94);
+    x.fillStyle=css("--muted");x.font="11px -apple-system";x.fillText("Bu ay gider yok",cx,122);return;
+  }
+  let a=-Math.PI/2;
+  vals.forEach((v,i)=>{if(v<=0)return;const b=a+Math.PI*2*(v/total);x.beginPath();x.strokeStyle=colors[i%colors.length];x.lineWidth=26;x.arc(cx,cy,r,a,b);x.stroke();a=b});
+  x.fillStyle=css("--text");x.textAlign="center";x.font="800 17px -apple-system";x.fillText(fmt(total),cx,94);
+  x.fillStyle=css("--muted");x.font="10px -apple-system";x.fillText("Toplam gider",cx,111);
+  const startY=170, gap=22;x.textAlign="left";x.font="11px -apple-system";
+  labels.forEach((lab,i)=>{const y=startY+i*gap, v=vals[i]||0, pct=total?Math.round(v/total*100):0;x.fillStyle=colors[i%colors.length];x.beginPath();x.arc(20,y-4,5,0,Math.PI*2);x.fill();x.fillStyle=css("--text");x.fillText(lab,32,y);x.fillStyle=css("--muted");x.textAlign="right";x.fillText(`${fmt(v)} · %${pct}`,w-18,y);x.textAlign="left"});
+}
 function drawDashChart(){
   const end=new Date(today()+"T12:00:00"), days=[];for(let i=6;i>=0;i--){const d=new Date(end);d.setDate(d.getDate()-i);days.push(new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10))}
   const list=calc(), vals=days.map(d=>list.filter(r=>r.date===d).reduce((s,r)=>s+r.ciro,0)), labs=days.map(d=>d.slice(8,10)+"/"+d.slice(5,7));drawBars($("dashChart"),labs,vals)
@@ -492,8 +512,9 @@ function renderReports(){
   const weeks={};list.forEach(r=>{const k=`${weekNo(r.date)}. hafta`;weeks[k]??={ciro:0,gider:0,kantin:0,tost:0,kart:0};weeks[k].ciro+=r.ciro;weeks[k].gider+=r.gider;weeks[k].kantin+=r.kantin;weeks[k].tost+=r.tost;weeks[k].kart+=r.kart});
   $("weeklySummary").innerHTML=Object.keys(weeks).length?Object.entries(weeks).map(([k,v])=>`<div class="summary-row"><b>${k}</b><span>Ciro<br><b>${plain(v.ciro)}</b></span><span>Gider<br><b>${plain(v.gider)}</b></span><span>Kantin<br><b>${plain(v.kantin)}</b></span><span>Net<br><b>${plain(v.ciro-v.gider)}</b></span></div>`).join(""):'<div class="empty">Bu ayda kayıt yok.</div>';
   const byCategory={}; list.forEach(r=>(r.expenses||[]).forEach(e=>{if(e.amount>0){const k=e.category||"Diğer";byCategory[k]=(byCategory[k]||0)+e.amount}}));
-  const ordered=EXPENSE_CATEGORIES.map(k=>[k,byCategory[k]||0]).filter(([,v])=>v>0);
-  $("expenseCategorySummary").innerHTML=ordered.length?ordered.map(([k,v])=>`<div class="summary-row"><b>${k}</b><span>Toplam Gider<br><b>${plain(v)}</b></span><span>Pay<br><b>%${g?Math.round((v/g)*100):0}</b></span><span>Durum<br><b>${v>0?"Aktif":"-"}</b></span><span>—<br><b></b></span></div>`).join(""):'<div class="empty">Bu ay için kategorili gider kaydı yok.</div>';
+  const ordered=EXPENSE_CATEGORIES.map(k=>[k,byCategory[k]||0]).filter(([,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+  drawExpenseDonut($("expenseChart"),ordered.map(([,v])=>v),ordered.map(([k])=>k));
+  $("expenseCategorySummary").innerHTML=ordered.length?ordered.map(([k,v],i)=>`<div class="summary-row"><b>${i+1}. ${k}</b><span>Toplam<br><b>${fmt(v)}</b></span><span>Pay<br><b>%${g?Math.round((v/g)*100):0}</b></span><span>Kayıt<br><b>${list.reduce((n,r)=>n+(r.expenses||[]).filter(e=>(e.category||"Diğer")===k&&e.amount>0).length,0)}</b></span><span>—<br><b></b></span></div>`).join(""):'<div class="empty">Bu ay için kategorili gider kaydı yok.</div>';
 }
 function renderAll(){renderDashboard();renderTable();if($("reportsPage").classList.contains("active"))renderReports()}
 
