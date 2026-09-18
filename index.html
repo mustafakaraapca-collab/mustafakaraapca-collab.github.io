@@ -1184,6 +1184,44 @@ const SUPPLIER_SUGGESTIONS=[
   "Sütaş"
 ];
 
+function normalizeSupplierName(value){
+
+  const raw=
+    String(value||"")
+      .trim()
+      .replace(/\s+/g," ");
+
+  if(!raw)
+    return "";
+
+  const key=
+    raw.toLocaleLowerCase("tr-TR");
+
+  const known=
+    SUPPLIER_SUGGESTIONS
+      .find(
+        name=>
+          name.toLocaleLowerCase("tr-TR")===key
+      );
+
+  if(known)
+    return known;
+
+  return raw
+    .split(" ")
+    .map(
+      word=>
+        word
+          ? word.charAt(0)
+              .toLocaleUpperCase("tr-TR")+
+            word.slice(1)
+              .toLocaleLowerCase("tr-TR")
+          : ""
+    )
+    .join(" ");
+
+}
+
 function normalizeRow(r){
 
   const oldGider=Number(r?.gider||0);
@@ -1195,7 +1233,7 @@ function normalizeRow(r){
             category:e?.category||"Diğer",
             supplier:
               e?.category==="Ürün Alımı"
-                ? String(e?.supplier||"").trim()
+                ? normalizeSupplierName(e?.supplier)
                 : "",
             amount:Number(e?.amount||0)
           }))
@@ -1253,7 +1291,7 @@ function mergeExpenses(items=[]){
 
     const supplier=
       category==="Ürün Alımı"
-        ? String(e?.supplier||"").trim()
+        ? normalizeSupplierName(e?.supplier)
         : "";
 
     const key=
@@ -1731,10 +1769,11 @@ function getExpenseDrafts(
         row
           .querySelector(".expense-category")
           .value==="Ürün Alımı"
-            ? row
-                .querySelector(".expense-supplier")
-                .value
-                .trim()
+            ? normalizeSupplierName(
+                row
+                  .querySelector(".expense-supplier")
+                  .value
+              )
             : "",
 
       amount:
@@ -2433,7 +2472,7 @@ function addOrUpdate(){
 
           supplier:
             e.category==="Ürün Alımı"
-              ? String(e.supplier||"").trim()
+              ? normalizeSupplierName(e.supplier)
               : "",
 
           amount:
@@ -4039,7 +4078,7 @@ function renderReports(){
             ){
 
               const supplier=
-                String(e.supplier||"").trim() ||
+                normalizeSupplierName(e.supplier) ||
                 "Belirtilmemiş";
 
               bySupplier[supplier]=
