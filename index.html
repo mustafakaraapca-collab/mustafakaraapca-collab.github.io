@@ -223,12 +223,14 @@
 
     .expense-row{
       display:grid;
-      grid-template-columns:1.15fr 1fr auto;
+      grid-template-columns:1.05fr 1fr .8fr auto;
       gap:8px;
       align-items:end
     }
 
     .expense-row select,.expense-row input{height:42px}
+
+    .supplier-field.hidden{display:none}
 
     .remove-expense{
       width:42px;
@@ -497,7 +499,6 @@
     }
 
     .lock.show{display:flex}
-
     .lockcard{
       width:min(390px,100%);
       text-align:center
@@ -597,6 +598,7 @@
       .preview{grid-template-columns:1fr 1fr}
       .preview .expense-total-box{grid-column:1/-1}
       .expense-row{grid-template-columns:1fr 1fr auto}
+      .expense-row .supplier-field{grid-column:1/3;grid-row:2}
       .stat .value{font-size:20px}
       .actions button{flex:1}
       .toolbar .group{width:100%}
@@ -961,6 +963,15 @@
 
       </div>
 
+      <div class="section-title">
+        <h2>Ürün Alımları / Tedarikçiler</h2>
+        <span>Seçilen ay · marka bazında toplam</span>
+      </div>
+
+      <div class="card">
+        <div class="summary-table" id="supplierSummary"></div>
+      </div>
+
     </section>
 
     <section class="page" id="settingsPage">
@@ -997,7 +1008,6 @@
           </button>
 
         </div>
-
         <div class="setting">
 
           <div>
@@ -1165,6 +1175,15 @@ const EXPENSE_CATEGORIES=[
   "Diğer"
 ];
 
+const SUPPLIER_SUGGESTIONS=[
+  "Eti",
+  "Ülker",
+  "Tuğpa",
+  "Coca-Cola",
+  "Pepsi",
+  "Sütaş"
+];
+
 function normalizeRow(r){
 
   const oldGider=Number(r?.gider||0);
@@ -1174,6 +1193,10 @@ function normalizeRow(r){
       ? r.expenses
           .map(e=>({
             category:e?.category||"Diğer",
+            supplier:
+              e?.category==="Ürün Alımı"
+                ? String(e?.supplier||"").trim()
+                : "",
             amount:Number(e?.amount||0)
           }))
           .filter(e=>e.amount>0)
@@ -1184,6 +1207,7 @@ function normalizeRow(r){
     expenses=[
       {
         category:r?.giderCategory||"Diğer",
+        supplier:"",
         amount:oldGider
       }
     ];
@@ -1223,18 +1247,41 @@ function mergeExpenses(items=[]){
 
     if(amount<=0)return;
 
-    const category=e?.category||"Diğer";
+    const category=
+      e?.category||
+      "Diğer";
 
-    totals[category]=
-      (totals[category]||0)+amount;
+    const supplier=
+      category==="Ürün Alımı"
+        ? String(e?.supplier||"").trim()
+        : "";
+
+    const key=
+      JSON.stringify([
+        category,
+        supplier
+      ]);
+
+    totals[key]=
+      (totals[key]||0)+amount;
 
   });
 
   return Object.entries(totals)
-    .map(([category,amount])=>({
-      category,
-      amount
-    }));
+    .map(([key,amount])=>{
+
+      const [
+        category,
+        supplier
+      ]=JSON.parse(key);
+
+      return {
+        category,
+        supplier,
+        amount
+      };
+
+    });
 
 }
 
@@ -1472,7 +1519,7 @@ function parseMoney(v){
 function expenseOptions(selected=""){
 
   return (
-    '<option value="">Kategori seç</option>'+
+    '<option value="">Kategori seç</option>'+ 
     EXPENSE_CATEGORIES
       .map(
         c=>
@@ -1487,6 +1534,7 @@ function renderExpenseRows(
   items=[
     {
       category:"",
+      supplier:"",
       amount:""
     }
   ]
@@ -1502,6 +1550,7 @@ function renderExpenseRows(
       : [
           {
             category:"",
+            supplier:"",
             amount:""
           }
         ];
@@ -1519,14 +1568,23 @@ function renderExpenseRows(
         : "";
 
     row.innerHTML=`
-      <div>
+      <div class="category-field">
         <label>KATEGORİ</label>
         <select class="expense-category">
           ${expenseOptions(item.category||"")}
         </select>
       </div>
 
-      <div>
+      <div class="supplier-field ${item.category==="Ürün Alımı"?"":"hidden"}">
+        <label>MARKA / TEDARİKÇİ</label>
+        <input
+          class="expense-supplier"
+          list="supplierSuggestions"
+          placeholder="Eti, Ülker, Tuğpa..."
+          value="${String(item.supplier||"").replace(/"/g,"&quot;")}">
+      </div>
+
+      <div class="amount-field">
         <label>TUTAR</label>
         <input
           class="expense-amount"
@@ -1543,6 +1601,53 @@ function renderExpenseRows(
       </button>
     `;
 
+    if(!document.getElementById("supplierSuggestions")){
+
+      const dl=
+        document.createElement("datalist");
+
+      dl.id=
+        "supplierSuggestions";
+
+      dl.innerHTML=
+        SUPPLIER_SUGGESTIONS
+          .map(
+            s=>`<option value="${s}"></option>`
+          )
+          .join("");
+
+      document.body.appendChild(dl);
+
+    }
+
+    const categoryEl=
+      row.querySelector(".expense-category");
+
+    const supplierField=
+      row.querySelector(".supplier-field");
+
+    const supplierInput=
+      row.querySelector(".expense-supplier");
+
+    function syncSupplierField(){
+
+      const isProduct=
+        categoryEl.value==="Ürün Alımı";
+
+      supplierField
+        .classList
+        .toggle(
+          "hidden",
+          !isProduct
+        );
+
+      if(!isProduct)
+        supplierInput.value="";
+
+    }
+
+    syncSupplierField();
+
     row
       .querySelector(".expense-amount")
       .addEventListener(
@@ -1550,10 +1655,18 @@ function renderExpenseRows(
         updatePreview
       );
 
-    row
-      .querySelector(".expense-category")
+    categoryEl
       .addEventListener(
         "change",
+        ()=>{
+          syncSupplierField();
+          updatePreview();
+        }
+      );
+
+    supplierInput
+      .addEventListener(
+        "input",
         updatePreview
       );
 
@@ -1584,6 +1697,7 @@ function renderExpenseRows(
 function addExpenseRow(
   item={
     category:"",
+    supplier:"",
     amount:""
   }
 ){
@@ -1612,6 +1726,16 @@ function getExpenseDrafts(
         row
           .querySelector(".expense-category")
           .value || "",
+
+      supplier:
+        row
+          .querySelector(".expense-category")
+          .value==="Ürün Alımı"
+            ? row
+                .querySelector(".expense-supplier")
+                .value
+                .trim()
+            : "",
 
       amount:
         parseMoney(
@@ -1654,7 +1778,7 @@ function expenseSummary(r){
         items
           .map(
             e=>
-              `<span class="expense-chip">${e.category} ${plain(e.amount)}</span>`
+              `<span class="expense-chip">${e.category}${e.supplier?" · "+e.supplier:""} ${plain(e.amount)}</span>`
           )
           .join("")
       }
@@ -1666,7 +1790,13 @@ function expenseSummary(r){
 function expenseSearchText(r){
 
   return (r.expenses||[])
-    .map(e=>e.category)
+    .map(
+      e=>
+        [
+          e.category,
+          e.supplier||""
+        ].join(" ")
+    )
     .join(" ")
     .toLowerCase();
 
@@ -1839,7 +1969,7 @@ function renderMonthOptions(){
   const av=a.value;
 
   a.innerHTML=
-    '<option value="">Tüm aylar</option>'+
+    '<option value="">Tüm aylar</option>'+ 
     months
       .map(
         m=>
@@ -2301,6 +2431,11 @@ function addOrUpdate(){
             e.category ||
             "Diğer",
 
+          supplier:
+            e.category==="Ürün Alımı"
+              ? String(e.supplier||"").trim()
+              : "",
+
           amount:
             e.amount
         })
@@ -2497,7 +2632,6 @@ function addOrUpdate(){
           enteredKart,
 
         expenses,
-
         gider,
 
         giderCategory:
@@ -2716,6 +2850,7 @@ function closeBalance(){
 
   addExpenseRow({
     category:"Diğer",
+    supplier:"",
     amount:extra
   });
 
@@ -2769,7 +2904,7 @@ function csv(){
           )
           .map(
             e=>
-              `${e.category}: ${e.amount}`
+              `${e.category}${e.supplier?" / "+e.supplier:""}: ${e.amount}`
           )
           .join(" | ");
 
@@ -2814,7 +2949,7 @@ function backup(){
       [
         JSON.stringify(
           {
-            version:4,
+            version:5,
             exportedAt:
               new Date().toISOString(),
             rows
@@ -3497,7 +3632,6 @@ function drawExpenseDonut(
 
       x.textAlign=
         "right";
-
       x.fillText(
         `${fmt(v)} · %${pct}`,
         w-18,
@@ -3890,6 +4024,97 @@ function renderReports(){
           .join("")
 
       : '<div class="empty">Bu ay için kategorili gider kaydı yok.</div>';
+
+  const bySupplier={};
+
+  list.forEach(
+    r=>
+      (r.expenses||[])
+        .forEach(
+          e=>{
+
+            if(
+              e.amount>0 &&
+              e.category==="Ürün Alımı"
+            ){
+
+              const supplier=
+                String(e.supplier||"").trim() ||
+                "Belirtilmemiş";
+
+              bySupplier[supplier]=
+                (bySupplier[supplier]||0)+
+                e.amount;
+
+            }
+
+          }
+        )
+  );
+
+  const suppliers=
+    Object.entries(bySupplier)
+      .sort(
+        (a,b)=>b[1]-a[1]
+      );
+
+  const supplierTotal=
+    suppliers.reduce(
+      (s,[,v])=>s+v,
+      0
+    );
+
+  $("supplierSummary").innerHTML=
+
+    suppliers.length
+
+      ? suppliers
+          .map(
+            ([name,value],i)=>`
+              <div class="summary-row">
+
+                <b>
+                  ${i+1}. ${name}
+                </b>
+
+                <span>
+                  Toplam
+                  <br>
+                  <b>${fmt(value)}</b>
+                </span>
+
+                <span>
+                  Pay
+                  <br>
+                  <b>
+                    %${supplierTotal
+                      ? Math.round(
+                          value/
+                          supplierTotal*
+                          100
+                        )
+                      : 0}
+                  </b>
+                </span>
+
+                <span>
+                  Ürün Alımı
+                  <br>
+                  <b>${fmt(supplierTotal)}</b>
+                </span>
+
+                <span>
+                  —
+                  <br>
+                  <b></b>
+                </span>
+
+              </div>
+            `
+          )
+          .join("")
+
+      : '<div class="empty">Bu ay için ürün alımı kaydı yok.</div>';
 
 }
 
